@@ -1,0 +1,134 @@
+%matplotlib inline
+from matplotlib import style
+style.use('fivethirtyeight')
+import matplotlib.pyplot as plt
+
+import numpy as np
+import pandas as pd
+import datetime as dt
+
+#Reflect Tables into SQLAlchemy ORM
+
+# Python SQL toolkit and Object Relational Mapper
+import sqlalchemy
+from sqlalchemy.ext.automap import automap_base
+from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, func
+
+# create engine to hawaii.sqlite
+engine = create_engine("sqlite:///Resources/hawaii.sqlite")
+
+# reflect an existing database into a new model
+# Create a base class
+Base = automap_base()
+
+# reflect the tables
+#Base.prepare(engine, reflect=True)
+Base.prepare(autoload_with=engine)
+
+# View all of the classes that automap found
+# Get the list of classes that were reflected
+classes = Base.classes.keys()
+print(classes)
+
+# Save references to each table
+# Save references to the 'measurement' and 'station' tables
+Measurement = Base.classes.measurement
+Station = Base.classes.station
+
+# Create our session (link) from Python to the DB
+# Create a session
+session = Session(engine)
+
+#Exploratory Precipitation Analysis
+
+# Design a query to retrieve the last 12 months of precipitation data and plot the results. 
+# Starting from the most recent data point in the database. 
+# Find the most recent date in the data set.
+most_recent_date_row = session.query(func.max(Measurement.date)).one()
+most_recent_date_str = most_recent_date_row[0]  # Extract the date value from the Row as a string
+
+# Convert the date string to a datetime object
+most_recent_date = dt.datetime.strptime(most_recent_date_str, '%Y-%m-%d') #needed code to avoid an 'str' error for the delta of date.
+
+# Calculate the date one year from the last date in data set.
+one_year_ago = most_recent_date - dt.timedelta(days=365)
+
+# Perform a query to retrieve the data and precipitation scores
+precipitation_data = session.query(Measurement.date, Measurement.prcp).\
+    filter(Measurement.date >= one_year_ago).all()
+
+# Save the query results as a Pandas DataFrame. Explicitly set the column names
+precipitation_df = pd.DataFrame(precipitation_data, columns=['date', 'prcp'])
+
+# Sort the dataframe by date
+precipitation_df = precipitation_df.sort_values(by='date')
+
+# Use Pandas Plotting with Matplotlib to plot the data
+precipitation_df.plot(x='date', y='prcp', figsize=(10, 6), label='Precipitation')
+plt.xlabel("Date")
+plt.ylabel("Inches")
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.legend()  # Show the legend with the label
+plt.show()
+
+# Use Pandas to calculate the summary statistics for the precipitation data
+summary_statistics = precipitation_df['prcp'].describe()
+# Convert the summary_statistics series to a DataFrame
+summary_statistics_df = summary_statistics.to_frame()
+summary_statistics_df
+
+
+#Exploratory Station Analysis
+
+# Design a query to calculate the total number of stations in the dataset
+total_stations = session.query(func.count(Station.station)).one()
+print(total_stations)
+
+
+# Design a query to find the most active stations (i.e. which stations have the most rows?)
+# List the stations and their counts in descending order.
+
+station_activity = session.query(Measurement.station, func.count(Measurement.station)).\
+    group_by(Measurement.station).\
+    order_by(func.count(Measurement.station).desc()).all()
+
+for station, count in station_activity: ##check output
+    print(f"Station: {station}, Count: {count}")
+
+# Using the most active station id from the previous query, calculate the lowest, highest, and average temperature.
+most_active_station = station_activity[0][0]  # Get the station ID of the most active station
+# Calculate the lowest, highest, and average temperature for the most active station
+temperature_stats = session.query(func.min(Measurement.tobs), func.max(Measurement.tobs), func.avg(Measurement.tobs)).\
+    filter(Measurement.station == most_active_station).all()
+
+lowest_temp, highest_temp, avg_temp = temperature_stats[0]
+
+temperature_stats
+
+# Using the most active station id
+most_active_station = station_activity[0][0]  # Get the station ID of the most active station
+
+
+# Query the last 12 months of temperature observation data for this station and plot the results as a histogram
+# Calculate the date one year from the last date in data set.
+one_year_ago = most_recent_date - dt.timedelta(days=365)
+
+temperature_data = session.query(Measurement.tobs).\
+    filter(Measurement.station == most_active_station, Measurement.date >= one_year_ago).all()
+
+# Convert the query results to a list of temperatures
+temperatures = [temp[0] for temp in temperature_data]
+
+# Plot the temperature data as a histogram
+plt.figure(figsize=(8, 6))
+plt.hist(temperatures, bins=12, edgecolor='black')
+plt.xlabel("Temperature (°F)")
+plt.ylabel("Frequency")
+plt.title(f"Temperature Observation Data for Station {most_active_station}\nLast 12 Months")
+plt.tight_layout()
+plt.show()
+
+# Close Session
+session.close()
